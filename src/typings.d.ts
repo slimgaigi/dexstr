@@ -16,3 +16,18 @@ interface CdReference {
   titre?: string;
   annee?: number;
 }
+
+interface CdRecords {
+  datasetid?: string;
+  recordid?: string;
+  fields?: CdReference;
+  record_timestamp?: string;
+}
+
+interface CdByYear {
+  [annee: number]: Array<CdReference>;
+}
+
+interface CdByTitle {
+  [titre: string]: Array<CdReference>;
+}
