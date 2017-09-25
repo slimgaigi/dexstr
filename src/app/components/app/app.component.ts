@@ -1,5 +1,5 @@
 import {AfterViewInit, Component, ViewChild} from '@angular/core';
-import {ApiService} from "../../services/api.service";
+import {ApiService} from '../../services/api.service';
 import * as _ from 'underscore';
 import Chart from 'chart.js';
 
@@ -9,15 +9,16 @@ import Chart from 'chart.js';
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent implements AfterViewInit {
-  maxCount: number = 10;
+  maxCount = 10;
   context: CanvasRenderingContext2D;
   chart: Chart;
 
   @ViewChild('dataChart') chartCanvas;
 
   constructor(private _apiService: ApiService) {
+    // Let's subscribe to API change Event Emitter
     this._apiService.cdResultsChanged.subscribe(
-      (cds) => {
+      (success) => {
         let
           cdsByTitle: any,
           rawData: { titre: number; total: number }[],
@@ -25,33 +26,43 @@ export class AppComponent implements AfterViewInit {
           datasets
         ;
 
-        if (cds && cds.length) {
+        if (success) { // Success
+
+          // let's get the list of CDs grouped by Title
           cdsByTitle = this.getCdsByTitle();
+
+          // let's create a new list with the data we want to use
           rawData = _.chain(cdsByTitle)
             .map((cdRef: Array<CdReference>, title) => {
               return {
                 titre: title,
+                auteur: cdRef[0].auteur,
+                editeur: cdRef[0].editeur,
+                cote: cdRef[0].cote,
                 total: _.reduce(cdRef, (memo, cd) => {
                   return memo + cd.nbre_de_prets;
                 }, 0)
-              }
-                ;
+              };
             })
             .sortBy('total')
             .reverse()
             .value()
           ;
+
+          // let's get the labels
           labels = _.chain(rawData)
             .pluck('titre')
             .map(title => {
-              return title.length > 20 ? title.slice(0,20) + '...' : title;
+              return title.length > 20 ? title.slice(0, 20) + '...' : title;
             })
             .value()
             .slice(0, this.maxCount)
           ;
-          datasets = [{data: _.pluck(rawData, 'total')}].slice(0, this.maxCount);
 
-          if (!this.chart) {
+          // let's get the datasets for the chart
+          datasets = [{label: 'Total toutes années confondues', data: _.pluck(rawData, 'total')}].slice(0, this.maxCount);
+
+          if (!this.chart) { // no chart generated yet
             this.chart = new Chart(this.context, {
               type: 'bar',
               data: {
@@ -59,14 +70,14 @@ export class AppComponent implements AfterViewInit {
                 datasets: datasets
               }
             });
-          } else {
+          } else { // let's update the chart with new data
             this.chart.data.labels = labels;
             this.chart.data.datasets = datasets;
             this.chart.update();
           }
         }
       }
-    )
+    );
   }
 
   private getCdsByYear(): CdByYear {
