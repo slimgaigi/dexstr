@@ -143,3 +143,4 @@ testem.log
 /e2e/*.map
 
 /package-lock.json
+/id_rsa*
