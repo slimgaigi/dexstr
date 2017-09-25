@@ -127,6 +127,7 @@ $RECYCLE.BIN/
 
 # dependencies
 /node_modules
+/node_modules/
 
 # misc
 /.sass-cache
@@ -141,4 +142,4 @@ testem.log
 /e2e/*.js
 /e2e/*.map
 
-/node_modules/
+/package-lock.json
