@@ -3,6 +3,47 @@ import {ApiService} from '../../services/api.service';
 import * as _ from 'underscore';
 import Chart from 'chart.js';
 
+function hue2rgb(t) {
+  if (t < 0) {
+    t += 1;
+  }
+  if (t > 1) {
+    t -= 1;
+  }
+  if (t < 1 / 6) {
+    return 6 * t;
+  }
+  if (t < 1 / 2) {
+    return 1;
+  }
+  if (t < 2 / 3) {
+    return (2 / 3 - t) * 6;
+  }
+  return 0;
+}
+
+function hslToRgb(h) {
+  let r, g, b;
+  r = hue2rgb(h + 1 / 3);
+  g = hue2rgb(h);
+  b = hue2rgb(h - 1 / 3);
+
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function setColorTones(n: number): Array<string> {
+  let tones = [];
+  if (!n) {
+    tones.push('rgba(128,128,128,1)');
+    return tones;
+  }
+  for (let rgb, i = 0; i < n; i++) {
+    rgb = hslToRgb(i / n);
+    tones[i] = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},1)`;
+  }
+  return tones;
+}
+
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
@@ -12,86 +53,87 @@ export class AppComponent implements AfterViewInit {
   maxCount = 10;
   context: CanvasRenderingContext2D;
   chart: Chart;
+  chartType = 0;
+  switchLabels = ['Voir le détail par années', 'Voir les données compilées'];
+  colorTones: Array<string>;
 
   @ViewChild('dataChart') chartCanvas;
+  @ViewChild('switcherCta') switchButton;
 
   constructor(private _apiService: ApiService) {
     // Let's subscribe to API change Event Emitter
     this._apiService.cdResultsChanged.subscribe(
       (success) => {
-        let
-          cdsByTitle: any,
-          rawData: { titre: number; total: number }[],
-          labels,
-          datasets
-        ;
-
         if (success) { // Success
-
-          // let's get the list of CDs grouped by Title
-          cdsByTitle = this.getCdsByTitle();
-
-          // let's create a new list with the data we want to use
-          rawData = _.chain(cdsByTitle)
-            .map((cdRef: Array<CdReference>, title) => {
-              return {
-                titre: title,
-                auteur: cdRef[0].auteur,
-                editeur: cdRef[0].editeur,
-                cote: cdRef[0].cote,
-                total: _.reduce(cdRef, (memo, cd) => {
-                  return memo + cd.nbre_de_prets;
-                }, 0)
-              };
-            })
-            .sortBy('total')
-            .reverse()
-            .value()
-          ;
-
-          // let's get the labels
-          labels = _.chain(rawData)
-            .pluck('titre')
-            .map(title => {
-              return title.length > 20 ? title.slice(0, 20) + '...' : title;
-            })
-            .value()
-            .slice(0, this.maxCount)
-          ;
-
-          // let's get the datasets for the chart
-          datasets = [{label: 'Total toutes années confondues', data: _.pluck(rawData, 'total')}].slice(0, this.maxCount);
-
-          if (!this.chart) { // no chart generated yet
-            this.chart = new Chart(this.context, {
-              type: 'bar',
-              data: {
-                labels: labels,
-                datasets: datasets
-              }
-            });
-          } else { // let's update the chart with new data
-            this.chart.data.labels = labels;
-            this.chart.data.datasets = datasets;
-            this.chart.update();
-          }
+          this.colorTones = setColorTones(_.keys(this._apiService.cdsByYear).length);
+          this.createOrUpdateChart([{
+            label: 'Total toutes années confondues',
+            data: _.pluck(this._apiService.compiledData, 'total')
+          }].slice(0, this.maxCount));
         }
-      }
+      },
+      error => console.log(error),
+      () => console.log('cd results change complete!')
     );
   }
 
-  private getCdsByYear(): CdByYear {
-    return _.chain(this._apiService.cds)
-      .groupBy('annee')
-      .value()
-      ;
+  createOrUpdateChart(datasets) {
+    if (!this.chart) { // no chart generated yet
+      this.chart = new Chart(this.context, {
+        type: 'bar',
+        data: {
+          labels: this._apiService.compiledTitles.slice(0, this.maxCount),
+          datasets: datasets
+        },
+        options: {
+          scales: {
+            xAxes: [{
+              stacked: true
+            }],
+            yAxes: [{
+              stacked: true
+            }]
+          }
+        }
+      });
+    } else { // let's update the chart with new data
+      this.chart.data.labels = this._apiService.compiledTitles.slice(0, this.maxCount);
+      this.chart.data.datasets = datasets;
+      this.chart.update();
+    }
   }
 
-  private getCdsByTitle(): any {
-    return _.chain(this._apiService.cds)
-      .groupBy('titre')
-      .value()
-      ;
+  switchView() {
+    let datasets: Array<any> = [],
+      titles
+    ;
+
+    if (this.chartType) { // Let's switch to default view
+      this.chartType = 0;
+      datasets.push({
+        label: 'Total toutes années confondues',
+        data: _.pluck(this._apiService.compiledData, 'total')
+      });
+    } else { // Let's switch to detailed view
+      this.chartType = 1;
+      titles = _.pluck(this._apiService.compiledData, 'titre').slice(0, this.maxCount);
+
+      _.keys(this._apiService.cdsByYear).forEach((year, i) => {
+        let dataset = {
+          label: year,
+          data: [],
+          backgroundColor: this.colorTones[i]
+        };
+
+        titles.forEach(title => {
+          let lends = _.find(this._apiService.cdsByYear[year], cd => cd['titre'] === title);
+          dataset.data.push(lends ? lends['nbre_de_prets'] : 0);
+        });
+
+        datasets.push(dataset);
+      });
+    }
+    this.createOrUpdateChart(datasets.slice(0, this.maxCount));
   }
 
   ngAfterViewInit(): void {
